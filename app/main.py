@@ -12,9 +12,20 @@ logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
 # Now safe to import app modules
 from fastapi import FastAPI, Response
 from app.agents.graph import rag_agent
+from app.guardrails import initialize_rails, guard
+from app.services.redis import check_cache,set_cache
 from app.agents.state import AgentState
+
 from pydantic import BaseModel
 from typing import Optional
+
+
+app = FastAPI(title="Enterprise Agentic RAG API")
+
+
+@app.on_event("startup")
+def startup_event():
+    initialize_rails()
 
 
 app = FastAPI(title="Kubernetes RAG pipeline")
@@ -25,6 +36,7 @@ app = FastAPI(title="Kubernetes RAG pipeline")
 class QueryRequest(BaseModel):
     q: str
     thread_id: Optional[str] = "default_user"
+
 
 @app.get("/")
 def home():
@@ -45,38 +57,67 @@ def query(request: QueryRequest):
     q = request.q
     thread_id = request.thread_id
 
-    initial_state: AgentState = {
+    initial_state:AgentState = {
         "messages": [{"role": "user", "content": q}],
         "current_query": q,
         "documents": [],
         "plan": ["Start"],
         "status": "Initializing Graph...",
-        "final_answer": "",
+        "final_answer":""
     }
-
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-        }
-    }
+    config = {"configurable": {"thread_id": thread_id}}
 
     try:
-        final_output = rag_agent.invoke(
-            initial_state,
-            config=config,
-        )
+        # Gate 1: NeMo Guardrails — blocks off-topic / jailbreaks
+        rail_fired, rail_response = guard(q)
+        if rail_fired:
+            logfire.info(f"🛡️ Request blocked by guardrails | thread={thread_id}")
+            return {
+                "question": q,
+                "answer": rail_response,
+                "thought_process": ["Intent: Guardrails Fired", "Retrieval: Skipped"],
+                "status": "Blocked by guardrails.",
+                "sources": [],
+            }
+
+        # Gate 2: Semantic Cache — serve instantly if a similar query was answered before
+        if os.getenv("USE_SEMANTIC_CACHE", "false").lower() == "true":
+            try:
+                cached = check_cache(q)
+                if cached:
+                    logfire.info(f"⚡ Semantic cache HIT | thread={thread_id}")
+                    return {
+                        "question": q,
+                        "answer": cached,
+                        "thought_process": ["⚡ Semantic Cache HIT — instant response"],
+                        "status": "Served from cache.",
+                        "sources": [],
+                    }
+            except Exception as e:
+                logfire.warning(f"⚠️ Cache check failed (non-fatal): {e}")
+
+        # Gate 3: LangGraph RAG pipeline
+        final_output = rag_agent.invoke(initial_state, config=config)
+
+        answer = final_output.get("final_answer", "")
+
+        # Store successful answer in semantic cache for future hits
+        if os.getenv("USE_SEMANTIC_CACHE", "false").lower() == "true" and answer:
+            try:
+                set_cache(q, answer)
+            except Exception:
+                pass
 
         return {
             "question": q,
-            "answer": final_output.get("final_answer", ""),
+            "answer": answer,
             "thought_process": final_output.get("plan"),
             "status": final_output.get("status"),
             "sources": final_output.get("documents", []),
         }
 
     except Exception as e:
-        logfire.error(f"Backend Execution Failed: {e}")
-
+        logfire.error(f"❌ Backend Execution Failed: {e}")
         return {
             "question": q,
             "answer": "I apologize, but I encountered an internal error. Please try again.",

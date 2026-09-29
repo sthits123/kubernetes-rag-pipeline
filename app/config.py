@@ -11,7 +11,7 @@ class Settings:
     QDRANT_COLLECTION = "kubernetes_rag"
 
     # --- LLM (Groq) ---
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY","")
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
     GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -25,7 +25,7 @@ class Settings:
     NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
     # --- Postgres Memory ---
-    DB_HOST = os.getenv("DB_HOST")                # /cloudsql/... (Cloud Run) or hostname (local)
+    DB_HOST = os.getenv("DB_HOST")                
     DB_USER = os.getenv("DB_USER")
     DB_PASS = os.getenv("DB_PASS")
     DB_NAME = os.getenv("DB_NAME", "rag_memory")
