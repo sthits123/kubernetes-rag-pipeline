@@ -1,4 +1,3 @@
-hon
 __pycache__/
 *.py[cod]
 *$py.class
@@ -26,6 +25,8 @@ wheels/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # Local Vector Store
 index.faiss
@@ -40,8 +41,24 @@ metadata.pkl
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+tfplan
+*.tfplan
 crash.log
 crash.*.log
+
+# Generated modernization workspace artifacts
+.github/modernize/
+
+# Python test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+ui/.streamlit/secrets.toml
 
 
 # IDEs
