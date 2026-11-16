@@ -1,12 +1,12 @@
 import logfire
 from app.agents.state import AgentState
+from app.gateway import get_langchain_llm
 
 
 def generate_node(state: AgentState):
     """
     Synthesizes a response using both Documentation Context AND Conversation History.
-    Uses the native Portkey client (not LangChain) so we can read the
-    x-portkey-cache-status response header and surface Cache: Hit in the UI.
+    Uses the configured local or Amazon Bedrock chat model.
     """
     query = state["current_query"]
 
@@ -38,7 +38,7 @@ def generate_node(state: AgentState):
             if len(full_context) + len(doc) < max_context_chars:
                 full_context += doc + "\n\n"
             else:
-                logfire.warning("Context truncated to fit Groq TPM limits.")
+                logfire.warning("Context truncated to fit the model context budget.")
                 break
 
         prompt = f"""
@@ -57,30 +57,23 @@ def generate_node(state: AgentState):
 
     with logfire.span("✍️ LLM Synthesis"):
         try:
-            response = portkey_client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
-            )
-            content = response.choices[0].message.content
-            cache_status = extract_cache_status(response)
-            is_cache_hit = cache_status == "HIT"
-
-            if is_cache_hit:
-                logfire.info("⚡ Gateway Cache Hit — response served from Portkey cache.")
-                plan_update = state["plan"] + ["Cache: Hit ⚡"]
-                status = "Cache hit — instant response."
-            else:
-                logfire.info("✅ Response synthesised via LLM.")
-                plan_update = state["plan"]
-                status = "Response generated."
+            response = get_langchain_llm().invoke(prompt)
+            content = response.content
+            if not isinstance(content, str):
+                content = "".join(
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict)
+                )
+            logfire.info("✅ Response synthesized via configured model.")
 
             return {
                 "final_answer": content,
-                "status": status,
-                "plan": plan_update,
+                "status": "Response generated.",
+                "plan": state["plan"],
                 "messages": [{"role": "assistant", "content": content}]
             }
 
         except Exception as e:
             logfire.error(f"LLM Generation failed: {e}")
-            raise e
+            raise

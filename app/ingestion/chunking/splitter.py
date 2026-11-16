@@ -7,23 +7,35 @@ def chunk_text(text: str, chunk_size: int = 1500) -> List[str]:
     Ensures chunks do not exceed the specified size.
     """
     with logfire.span("✂️ Text Chunking", text_length=len(text)):
+        if chunk_size < 1:
+            raise ValueError("chunk_size must be greater than zero.")
         if not text.strip(): 
             return []
-            
-        paragraphs = text.split("\n\n")
+
         chunks = []
-        current_chunk = ""
-        
-        for p in paragraphs:
-            if len(current_chunk) + len(p) < chunk_size:
-                current_chunk += p + "\n\n"
-            else:
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                current_chunk = p + "\n\n"
-        
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
+        current_parts = []
+        current_length = 0
+
+        for paragraph in text.split("\n\n"):
+            if not paragraph:
+                continue
+            fragments = [
+                paragraph[index:index + chunk_size]
+                for index in range(0, len(paragraph), chunk_size)
+            ]
+            for fragment in fragments:
+                separator_length = 2 if current_parts else 0
+                if current_length + separator_length + len(fragment) > chunk_size:
+                    chunks.append("\n\n".join(current_parts))
+                    current_parts = []
+                    current_length = 0
+                if current_parts:
+                    current_length += 2
+                current_parts.append(fragment)
+                current_length += len(fragment)
+
+        if current_parts:
+            chunks.append("\n\n".join(current_parts))
             
         valid_chunks = [c for c in chunks if c.strip()]
         logfire.info(f"✅ Generated {len(valid_chunks)} chunks")

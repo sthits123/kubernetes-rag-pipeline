@@ -7,20 +7,23 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
+logfire_token = os.getenv("LOGFIRE_TOKEN")
+logfire.configure(
+    token=logfire_token,
+    send_to_logfire=bool(logfire_token),
+)
 
 # Now safe to import app modules
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
 from app.agents.graph import rag_agent
 from app.guardrails import initialize_rails, guard
 from app.services.redis import check_cache,set_cache
 from app.agents.state import AgentState
 
 from pydantic import BaseModel
-from typing import Optional
 
 
-app = FastAPI(title="Enterprise Agentic RAG API")
+app = FastAPI(title="Kubernetes RAG pipeline")
 
 
 @app.on_event("startup")
@@ -28,14 +31,9 @@ def startup_event():
     initialize_rails()
 
 
-app = FastAPI(title="Kubernetes RAG pipeline")
-
-
-
-
 class QueryRequest(BaseModel):
     q: str
-    thread_id: Optional[str] = "default_user"
+    thread_id: str = "default_user"
 
 
 @app.get("/")
@@ -105,8 +103,8 @@ def query(request: QueryRequest):
         if os.getenv("USE_SEMANTIC_CACHE", "false").lower() == "true" and answer:
             try:
                 set_cache(q, answer)
-            except Exception:
-                pass
+            except Exception as e:
+                logfire.warning(f"Semantic cache write failed (non-fatal): {e}")
 
         return {
             "question": q,
@@ -118,10 +116,18 @@ def query(request: QueryRequest):
 
     except Exception as e:
         logfire.error(f"❌ Backend Execution Failed: {e}")
-        return {
-            "question": q,
-            "answer": "I apologize, but I encountered an internal error. Please try again.",
-            "thought_process": ["Error encountered during execution."],
-            "status": "error",
-            "sources": [],
-        }
+        raise HTTPException(
+            status_code=500,
+            detail="The RAG request could not be completed.",
+        ) from e
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host=os.getenv("HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", "8000")),
+        reload=os.getenv("RELOAD", "false").lower() == "true",
+    )

@@ -1,55 +1,80 @@
 import os
+from dataclasses import dataclass
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
 class Settings:
-    # --- Vector DB (Qdrant) ---
-    QDRANT_URL = os.getenv("QDRANT_CLUSTER_ENDPOINT")
-    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    QDRANT_COLLECTION = "kubernetes_rag"
+    """Runtime settings shared by local development and the ECS task role."""
 
-    # --- LLM (Groq) ---
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY","")
-    GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
-    GROQ_MODEL = "llama-3.3-70b-versatile"
+    RAG_PROVIDER: str = os.getenv("RAG_PROVIDER", "local").strip().lower()
+    AWS_REGION: str = os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+    BEDROCK_CHAT_MODEL_ID: str = os.getenv(
+        "BEDROCK_CHAT_MODEL_ID", "amazon.nova-lite-v1:0"
+    )
+    BEDROCK_GUARDRAIL_MODEL_ID: str = os.getenv(
+        "BEDROCK_GUARDRAIL_MODEL_ID", "amazon.nova-lite-v1:0"
+    )
+    BEDROCK_EMBEDDING_MODEL_ID: str = os.getenv(
+        "BEDROCK_EMBEDDING_MODEL_ID", "amazon.titan-embed-text-v2:0"
+    )
+    BEDROCK_EMBEDDING_DIMENSIONS: int = int(
+        os.getenv("BEDROCK_EMBEDDING_DIMENSIONS", "1024")
+    )
+    OPENSEARCH_ENDPOINT: str = os.getenv("OPENSEARCH_ENDPOINT", "")
+    OPENSEARCH_INDEX: str = os.getenv("OPENSEARCH_INDEX", "kubernetes-rag")
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "")
+    S3_DOCUMENT_PREFIX: str = os.getenv("S3_DOCUMENT_PREFIX", "documents")
 
-    # --- LLM Gateway (Portkey) ---
-    PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
-    PORTKEY_CONFIG_ID = os.getenv("PORTKEY_CONFIG_ID")
-    GROQ_SLUG = "rag"     # primary virtual key: @rag/llama-3.3-70b-versatile
-    GROQ_SLUG_2 = "brag"  # fallback virtual key: @brag/llama-3.1-8b-instant
+    # Explicit local-only adapters. They are installed through the `local` extra.
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_CHAT_MODEL: str = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2")
+    OLLAMA_GUARDRAIL_MODEL: str = os.getenv(
+        "OLLAMA_GUARDRAIL_MODEL", os.getenv("OLLAMA_CHAT_MODEL", "llama3.2")
+    )
+    OLLAMA_EMBEDDING_MODEL: str = os.getenv(
+        "OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"
+    )
+    QDRANT_URL: str = os.getenv(
+        "QDRANT_URL",
+        os.getenv("QDRANT_CLUSTER_ENDPOINT", "http://localhost:6333"),
+    )
+    QDRANT_API_KEY: str | None = os.getenv("QDRANT_API_KEY")
+    QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "kubernetes_rag")
 
-    # --- Guardrails (NVIDIA) ---
-    NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+    USE_SEMANTIC_CACHE: bool = _env_bool("USE_SEMANTIC_CACHE")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    LOGFIRE_TOKEN: str | None = os.getenv("LOGFIRE_TOKEN")
+    HOST: str = os.getenv("HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("PORT", "8000"))
+    RELOAD: bool = _env_bool("RELOAD")
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-    # --- Postgres Memory ---
-    DB_HOST = os.getenv("DB_HOST")                
-    DB_USER = os.getenv("DB_USER")
-    DB_PASS = os.getenv("DB_PASS")
-    DB_NAME = os.getenv("DB_NAME", "rag_memory")
-    LOCAL_MODE = os.getenv("LOCAL_MODE", "true").lower() == "true"
+    def validate(self) -> None:
+        if self.RAG_PROVIDER not in {"local", "aws"}:
+            raise ValueError("RAG_PROVIDER must be either 'local' or 'aws'.")
+        if self.RAG_PROVIDER == "aws":
+            missing = [
+                name
+                for name, value in (
+                    ("OPENSEARCH_ENDPOINT", self.OPENSEARCH_ENDPOINT),
+                    ("S3_BUCKET", self.S3_BUCKET),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "AWS mode requires " + ", ".join(missing) + "."
+                )
+        if self.BEDROCK_EMBEDDING_DIMENSIONS < 1:
+            raise ValueError("BEDROCK_EMBEDDING_DIMENSIONS must be positive.")
 
-    # --- Redis Semantic Cache ---
-    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-    USE_SEMANTIC_CACHE = os.getenv("USE_SEMANTIC_CACHE", "false").lower() == "true"
-
-    # --- Observability ---
-    LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "true")
-    LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
-    LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "kubernetes_rag")
-    LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
-
-    # --- Evals ---
-    JUDGE_GROQ = os.getenv("JUDGE_GROQ")
-
-
-# Apply LangSmith env vars for automatic LangChain tracing
-os.environ["LANGCHAIN_TRACING_V2"] = os.getenv("LANGSMITH_TRACING", "true")
-os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
-os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "entreprise_rag")
-os.environ["LANGCHAIN_ENDPOINT"] = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
 
 settings = Settings()

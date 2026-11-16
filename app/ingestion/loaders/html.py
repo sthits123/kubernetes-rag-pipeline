@@ -1,5 +1,5 @@
 import logfire
-from beautifulsoup4 import BeautifulSoup # type: ignore
+from bs4 import BeautifulSoup
 
 def parse_html(file_path: str):
     """

@@ -32,6 +32,16 @@ index.faiss
 metadata.pkl
 
 # Data
+/data/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
 
 
 # IDEs
@@ -49,4 +59,3 @@ commands.md
 .logfire
 
 tenvv
-

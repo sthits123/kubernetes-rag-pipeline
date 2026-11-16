@@ -3,11 +3,12 @@ from app.gateway import get_langchain_llm
 import logfire
 
 
-
 def planner_node(state: AgentState):
     """
     The Planner determines if a search is needed based on the ENTIRE conversation.
     """
+    llm = get_langchain_llm()
+
     # Get the conversation history (excluding the latest message)
     history = ""
     for msg in state["messages"][:-1]:

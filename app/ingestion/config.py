@@ -6,9 +6,11 @@ load_dotenv()
 
 class Settings:
     # --- Vector DB (Qdrant) ---
-    QDRANT_URL = os.getenv("QDRANT_CLUSTER_ENDPOINT")
+    QDRANT_URL = os.getenv("QDRANT_URL") or os.getenv(
+        "QDRANT_CLUSTER_ENDPOINT", "http://localhost:6333"
+    )
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-    QDRANT_COLLECTION = "enterprise_rag"
+    QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "kubernetes_rag")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
